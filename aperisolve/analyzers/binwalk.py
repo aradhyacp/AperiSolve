@@ -14,7 +14,6 @@ def analyze_binwalk(input_img: Path, output_dir: Path) -> None:
     extracted_dir = output_dir / f"_{image_name}.extracted"
 
     try:
-        stderr = ""
         # Run binwalk
         data = subprocess.run(
             ["binwalk", "-e", "../" + str(image_name), "--run-as=root"],
@@ -24,10 +23,14 @@ def analyze_binwalk(input_img: Path, output_dir: Path) -> None:
             check=False,
             timeout=MAX_PENDING_TIME,
         )
-        stderr += data.stderr
+        binwalk_stderr = data.stderr
+
+        # Track whether extraction happened
+        extraction_occurred = extracted_dir.exists()
 
         zip_exist = False
-        if extracted_dir.exists():
+        zip_stderr = ""
+        if extraction_occurred:
             # Zip extracted files
             zip_data = subprocess.run(
                 ["7z", "a", "../binwalk.7z", "*"],
@@ -37,20 +40,32 @@ def analyze_binwalk(input_img: Path, output_dir: Path) -> None:
                 check=False,
                 timeout=MAX_PENDING_TIME,
             )
-            zip_exist = True
-            stderr += zip_data.stderr
+            zip_stderr = zip_data.stderr
+            # Only set zip_exist if 7z succeeded (return code 0)
+            if zip_data.returncode == 0:
+                zip_exist = True
 
         # Remove the extracted directory
         if extracted_dir.exists():
             shutil.rmtree(extracted_dir)
 
-        # Only report error if stderr exists AND extraction failed.
-        # If zip_exist is True, binwalk worked (despite warnings), so we proceed.
-        if len(stderr) > 0 and not zip_exist:
+        # Report errors appropriately:
+        # 1. If binwalk had errors and didn't extract anything, report binwalk error
+        # 2. If extraction occurred but 7z failed, report 7z error
+        error_messages = []
+        if binwalk_stderr and not extraction_occurred:
+            error_messages.append(f"Binwalk: {binwalk_stderr}")
+        if extraction_occurred and not zip_exist:
+            if zip_stderr:
+                error_messages.append(f"7z compression: {zip_stderr}")
+            else:
+                error_messages.append("7z compression failed with no error output")
+
+        if error_messages:
             err = {
                 "binwalk": {
                     "status": "error",
-                    "error": stderr,
+                    "error": "\n".join(error_messages),
                 }
             }
             update_data(output_dir, err)
