@@ -53,10 +53,10 @@ def analyze_binwalk(input_img: Path, output_dir: Path) -> None:
         # 1. If binwalk had errors and didn't extract anything, report binwalk error
         # 2. If extraction occurred but 7z failed, report 7z error
         error_messages = []
-        if len(binwalk_stderr) > 0 and not extraction_occurred:
+        if binwalk_stderr and not extraction_occurred:
             error_messages.append(f"Binwalk: {binwalk_stderr}")
         if extraction_occurred and not zip_exist:
-            if len(zip_stderr) > 0:
+            if zip_stderr:
                 error_messages.append(f"7z compression: {zip_stderr}")
             else:
                 error_messages.append("7z compression failed with no error output")
